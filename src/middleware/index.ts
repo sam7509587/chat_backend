@@ -21,18 +21,19 @@ export const verifyToken = async (req: any, res: Response, next: NextFunction) =
         return res.status(409).json({
             statusCode: 409, message: "token is required"
         })
+    }else{
+        return await jwt.verify(token, SECRET_KEY, async(err: any, result: any) => {
+             if (err) {
+                 return next(new ApiError(409,err.message))
+             }else{
+                 const id: string = result.id
+                 const userFound = await User.findOne({where:{id}});
+                 if(!userFound){
+                     return next(new ApiError(400,"no user found with this token"))
+                 }
+                 req.user = userFound
+                 next()
+             }
+         })
     }
-   return jwt.verify(token, SECRET_KEY, async(err: any, result: any) => {
-        if (err) {
-            return next(new ApiError(409,err.message))
-        }else{
-            const id: string = result.id
-            const userFound = await User.findOne({where:{id}});
-            if(!userFound){
-                return next(new ApiError(400,"no user found with this token"))
-            }
-            req.user = userFound
-            next()
-        }
-    })
 }

@@ -5,31 +5,40 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { sendMail } from "../utility/mail";
 const { User, Friend } = require("../db/models")
+import { v4 as UUID } from "uuid";
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
     const { email, password, fullName } = req.body;
     try {
-        const foundData = await User.findOne({ where: { email } })
-        if (!foundData) {
+        const foundUser = await User.findOne({ where: { email } })
+        if (!foundUser) {
             if (!fullName) {
                 return next(new ApiError(401, "fullName is required"))
             }
             const bcryptPass = await bcrypt.hash(password, 10)
             const otp = Math.floor(100000 + Math.random() * 900000);
-            await User.create({ email, password: bcryptPass, fullName ,otp})
-            
-            await sendMail(email,otp)
+            const otpExp = new Date(new Date().getTime() + 5 * 60000);
+            await User.create({ id: UUID(), email, otpExp, password: bcryptPass, fullName, otp })
+            await sendMail(email, otp)
             return res.status(200).json({
-                statusCode: 200, message: "signup successfull check mail to verify otp",
+                statusCode: 200, message: "signup successfull check mail to verify otp valid fro 5 mins",
             })
         } else {
-            const token = await jwt.sign({ id: foundData.id }, SECRET_KEY)
-            if (foundData.dataValues.password === null) {
-                return res.status(201).json({
-                    statusCode: 200, message: "login successfull", token
+            const token = await jwt.sign({ id: foundUser.id }, SECRET_KEY)
+            if (foundUser.isVerified === false) {
+                if (foundUser.otpExp > Date.now()) {
+                    const timeLeft = (((foundUser.otpExp - Date.now()) / 60000).toFixed(2)).replace(/\./g,':')
+                    return next(new ApiError(403, `${timeLeft} time left verify your otp to login`))
+                }
+                const otp = Math.floor(100000 + Math.random() * 900000);
+                const otpExp = new Date(new Date().getTime() + 5 * 60000);
+                await sendMail(email, otp)
+                await User.update({ otpExp, otp }, { where: { email } })
+                return res.status(200).json({
+                    statusCode: 200, message: "verify mail to login by otp sent on your mail",
                 })
             }
-            const comparedPass = await bcrypt.compare(password, foundData.dataValues.password)
+            const comparedPass = await bcrypt.compare(password, foundUser.dataValues.password)
             if (comparedPass != true) {
                 return next(new ApiError(401, "email or password in wrong"))
             }
@@ -68,7 +77,6 @@ export const getUser = async (req: any, res: Response, next: NextFunction) => {
         } else {
             blockedIds = [id]
         }
-        console.log(blockedIds)
         const data = await User.findAll({
             where: {
                 fullName: {
@@ -84,20 +92,27 @@ export const getUser = async (req: any, res: Response, next: NextFunction) => {
 }
 export const verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { email, otp ,...other}: any = req.body
+        const { email, otp, ...other }: any = req.body
         if (!email || !otp) {
             return next(new ApiError(400, "email and otp are required"))
         }
-        if(Object.entries(other).length>0){
-            return next(new ApiError(400, "only email and otp are required"))
+        if (Object.entries(other).length > 0) {
+            return next(new ApiError(400,`${other} fields are not allowed}`))
         }
         const foundData = await User.findOne({ where: { email } })
         if (!foundData) {
             return next(new ApiError(400, "no user found with this email"))
         }
+        if(foundData.isVerified === true){
+            return next(new ApiError(400,"already verified user"))
+        }
         if (foundData.otp != otp) {
             return next(new ApiError(400, "invalid otp"))
         }
+        if(foundData.otpExp<Date.now()){
+            return next(new ApiError(400,"otp expired"))
+        }
+        await User.update({isVerified: true},{ where: { email } })
         const token = await jwt.sign({ id: foundData.id }, SECRET_KEY)
         return res.status(200).json({
             statusCode: 200, message: "login successfull !!", token

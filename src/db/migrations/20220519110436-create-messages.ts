@@ -8,17 +8,25 @@ module.exports = {
         primaryKey: true,
         type: Sequelize.INTEGER
       },
-      from: {
-        type: Sequelize.INTEGER
-      },
       to: {
-        type: Sequelize.INTEGER
+        type: Sequelize.UUID
+      },
+      from: {
+        type: Sequelize.UUID
       },
       message: {
         type: Sequelize.STRING
       },
-      isDeleted: {
-        type: Sequelize.BOOLEAN
+      conversationId: {
+        type: Sequelize.UUID
+      },
+      deletedBy: {
+        type: Sequelize.ARRAY(Sequelize.UUID),
+        defaultValue: []
+      },
+      isRead: {
+        type: Sequelize.BOOLEAN,
+        defaultValue: false,
       },
       createdAt: {
         allowNull: false,

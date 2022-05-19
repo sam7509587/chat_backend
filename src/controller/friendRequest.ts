@@ -1,8 +1,9 @@
 import { Response, NextFunction } from "express";
 import { ApiError } from "../config";
 import * as Sequelize from "sequelize";
+import {v4 as UUID} from "uuid";
 const Op = Sequelize.Op;
-const { User, Friend } = require("../db/models");
+const { User, Conversation } = require("../db/models");
 
 export const sendRequest = async (req: any, res: Response, next: NextFunction) => {
     const { id } = req.params;
@@ -16,7 +17,7 @@ export const sendRequest = async (req: any, res: Response, next: NextFunction) =
             return next(new ApiError(401, `no user found with this ${id}`))
         }
         const ids = [id, userId]
-        const findConversaton = await Friend.findOne({
+        const findConversaton = await Conversation.findOne({
             where: {
                 sender: { [Op.or]: ids },
                 receiver: { [Op.or]: ids }
@@ -35,12 +36,12 @@ export const sendRequest = async (req: any, res: Response, next: NextFunction) =
             if (findConversaton.status === "pending" && findConversaton.sender === req.user.id) {
                 return next(new ApiError(400, "already sent request"))
             }
-            const requestSent = await Friend.update({ sender: userId, receiver: id })
+            const requestSent = await Conversation.update({ sender: userId, receiver: id })
             return res.status(200).json({
                 statusCode: 200, message: "request sent", requestSent
             })
         }
-        const requestSent = await Friend.create({ sender: userId, receiver: id })
+        const requestSent = await Conversation.create({ id:UUID(),sender: userId, receiver: id })
         return res.status(200).json({
             statusCode: 200, message: "request sent", requestSent
         })
@@ -55,15 +56,16 @@ export const acceptRequest = async (req: any, res: Response, next: NextFunction)
         if (!foundData) {
             return next(new ApiError(401, "no user found with this id"))
         }
-        const requestFound = await Friend.findOne({ where: { sender: id, receiver: req.user.id ,status:"pending"} });
+        const requestFound = await Conversation.findOne({ where: { sender: id, receiver: req.user.id ,status:"pending"} });
         if (!requestFound) {
             return next(new ApiError(400, `there is no request from ${id}`))
         }
-        await Friend.update({ status: "accepted" }, { where: { sender: id, receiver: req.user.id } })
+        await Conversation.update({ status: "accepted" }, { where: { sender: id, receiver: req.user.id } })
         return res.status(200).json({
             statusCode: 200, message: "request accepted"
         })
     } catch (err: any) {
+        console.log(err)
         next(new ApiError(400, err.message))
     }
 }
@@ -74,11 +76,11 @@ export const rejectRequest = async (req: any, res: Response, next: NextFunction)
         if (!foundUser) {
             return next(new ApiError(401, "no user found with this id"))
         }
-        const requestFound = await Friend.findOne({ where: { sender: id, receiver: req.user.id ,status:"pending"} });
+        const requestFound = await Conversation.findOne({ where: { sender: id, receiver: req.user.id ,status:"pending"} });
         if (!requestFound) {
             return next(new ApiError(400, `there is no request from ${id}`))
         }
-        await Friend.destroy({
+        await Conversation.destroy({
             where: {
                 sender: id, receiver: req.user.id
             }
@@ -93,8 +95,9 @@ export const rejectRequest = async (req: any, res: Response, next: NextFunction)
 export const seeRequests = async (req: any, res: Response, next: NextFunction) => {
     try {
         let { search = "" } = req.query
-        const id = req.user.id
-        const data = await Friend.findAll({
+        const id = req.user.id;
+        
+        const data = await Conversation.findAll({
             where: {
                 receiver: id,
                 status: "pending"
@@ -117,7 +120,7 @@ export const unfriendUser = async (req: any, res: Response, next: NextFunction) 
             return next(new ApiError(401, "no user found with this id"))
         }
         const ids = [id,req.user.is]
-        const requestFound = await Friend.findOne({
+        const requestFound = await Conversation.findOne({
             where: {
                 sender: { [Op.or]: ids },
                 receiver: { [Op.or]: ids }
@@ -129,7 +132,7 @@ export const unfriendUser = async (req: any, res: Response, next: NextFunction) 
         if (requestFound.status != "accepted") {
             return next(new ApiError(400, "you can't unfriend user when you are not friend with"));
         }
-        await Friend.destroy({
+        await Conversation.destroy({
             where: {
                 sender: id, receiver: req.user.id
             }
@@ -148,9 +151,9 @@ export const blockUser = async (req: any, res: Response, next: NextFunction) => 
         if (!foundData) {
             return next(new ApiError(401, "no user found with this id"))
         }
-        const requestFound = await Friend.findOne({ where: { sender: { [Op.or]: [id, req.user.id] }, receiver: { [Op.or]: [id, req.user.id] } } });
+        const requestFound = await Conversation.findOne({ where: { sender: { [Op.or]: [id, req.user.id] }, receiver: { [Op.or]: [id, req.user.id] } } });
         if (!requestFound) {
-            await Friend.create({ sender: req.user.id, receiver: id, status: "blocked" })
+            await Conversation.create({ sender: req.user.id, receiver: id, status: "blocked" })
             return res.status(200).json({
                 statusCode: 200, message: "blocked successfully"
             })
@@ -158,7 +161,7 @@ export const blockUser = async (req: any, res: Response, next: NextFunction) => 
         if (requestFound.status === "blocked") {
             return next(new ApiError(409, "already blocked"))
         }
-        await Friend.update({ status: "blocked" }, { where: { [Op.or]: [id, req.user.id] }, receiver: { [Op.or]: [id, req.user.id] } })
+        await Conversation.update({ status: "blocked" }, { where: { [Op.or]: [id, req.user.id] }, receiver: { [Op.or]: [id, req.user.id] } })
         return res.status(200).json({
             statusCode: 200, message: "blocked successfully"
         })
